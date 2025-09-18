@@ -1928,20 +1928,26 @@
 {
   if (window["C3_IsSupported"]) {
     const enableWorker = false;
+    // Use explicit absolute URLs for runtime and worker/engine scripts so
+    // they load correctly even if a <base href="..."> is present on the page.
+    const CDN_BASE = "https://cdn.jsdelivr.net/gh/bubbls/ugss@main/2/";
     window["c3_runtimeInterface"] = new self.RuntimeInterface({
       useWorker: enableWorker,
-  // Use CDN base provided by user so engine scripts load from that CDN
-  runtimeBaseUrl: "https://cdn.jsdelivr.net/gh/bubbls/ugss@main/2/",
-  workerMainUrl: "scripts/workermain.js",
-  // Leave engine script as relative so it resolves against runtimeBaseUrl (the CDN)
-  engineScripts: ["scripts/c3runtime.js"],
+      // runtimeBaseUrl is the base used by the runtime to resolve relative URLs
+      runtimeBaseUrl: CDN_BASE,
+      // Worker entry module must be absolute or resolved against runtimeBaseUrl.
+      // Provide absolute URL so base href won't change it.
+      workerMainUrl: CDN_BASE + "scripts/workermain.js",
+      // Engine scripts as absolute URLs pointing to the CDN
+      engineScripts: [CDN_BASE + "scripts/c3runtime.js"],
       projectScripts: [
-        ["scripts/project/ScrollLock.js"]
+        [CDN_BASE + "scripts/project/ScrollLock.js"]
       ],
-      mainProjectScript: "scripts/project/ScrollLock.js",
+      mainProjectScript: CDN_BASE + "scripts/project/ScrollLock.js",
+      // scriptFolder is used for constructing some paths inside the runtime; keep it relative
       scriptFolder: "scripts/",
-      // Resolve worker dependency scripts relative to runtimeBaseUrl (CDN) as well
-      workerDependencyScripts: ["scripts/dispatchworker.js", "scripts/jobworker.js"],
+      // Provide absolute URLs for worker dependency scripts as well
+      workerDependencyScripts: [CDN_BASE + "scripts/dispatchworker.js", CDN_BASE + "scripts/jobworker.js"],
       exportType: "html5"
     })
   }
