@@ -1930,7 +1930,7 @@
     const enableWorker = false;
     window["c3_runtimeInterface"] = new self.RuntimeInterface({
       useWorker: enableWorker,
-      workerMainUrl: "workermain.js",
+      workerMainUrl: (new URL("scripts/workermain.js", location.href)).toString(),
       // Ensure engine script paths resolve to the current document location
       // so they don't get resolved to the CodePen preview host or other external base URLs.
       runtimeBaseUrl: (new URL('.', location.href)).toString(),
@@ -1940,7 +1940,10 @@
       ],
       mainProjectScript: "scripts/project/ScrollLock.js",
       scriptFolder: "scripts/",
-      workerDependencyScripts: [],
+      workerDependencyScripts: [
+        (new URL("scripts/dispatchworker.js", location.href)).toString(),
+        (new URL("scripts/jobworker.js", location.href)).toString()
+      ],
       exportType: "html5"
     })
   }
