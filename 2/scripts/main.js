@@ -1930,20 +1930,18 @@
     const enableWorker = false;
     window["c3_runtimeInterface"] = new self.RuntimeInterface({
       useWorker: enableWorker,
-      workerMainUrl: (new URL("scripts/workermain.js", location.href)).toString(),
-      // Ensure engine script paths resolve to the current document location
-      // so they don't get resolved to the CodePen preview host or other external base URLs.
-      runtimeBaseUrl: (new URL('.', location.href)).toString(),
-      engineScripts: [(new URL("scripts/c3runtime.js", location.href)).toString()],
+  // Use CDN base provided by user so engine scripts load from that CDN
+  runtimeBaseUrl: "https://cdn.jsdelivr.net/gh/bubbls/ugss@main/2/",
+  workerMainUrl: "scripts/workermain.js",
+  // Leave engine script as relative so it resolves against runtimeBaseUrl (the CDN)
+  engineScripts: ["scripts/c3runtime.js"],
       projectScripts: [
         ["scripts/project/ScrollLock.js"]
       ],
       mainProjectScript: "scripts/project/ScrollLock.js",
       scriptFolder: "scripts/",
-      workerDependencyScripts: [
-        (new URL("scripts/dispatchworker.js", location.href)).toString(),
-        (new URL("scripts/jobworker.js", location.href)).toString()
-      ],
+      // Resolve worker dependency scripts relative to runtimeBaseUrl (CDN) as well
+      workerDependencyScripts: ["scripts/dispatchworker.js", "scripts/jobworker.js"],
       exportType: "html5"
     })
   }
