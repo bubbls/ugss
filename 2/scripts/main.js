@@ -542,9 +542,21 @@
       if (self["C3_InsertHTMLPlaceholders"]) self["C3_InsertHTMLPlaceholders"]();
       let workerDependencyScripts = opts.workerDependencyScripts || [];
       let engineScripts = opts.engineScripts;
+      // Normalize relative script URLs to absolute URLs against runtimeBaseUrl so
+      // they are not affected by a document <base> tag. Leave absolute/blob/data URLs alone.
+      const normalizeUrl = url => {
+        if (typeof url !== "string") return url;
+        if (/^(https?:|\/\/|blob:|data:)/i.test(url)) return url;
+        try {
+          return (new URL(url, this._runtimeBaseUrl)).toString();
+        } catch (e) {
+          return url;
+        }
+      };
+      workerDependencyScripts = workerDependencyScripts.map(normalizeUrl);
+      engineScripts = engineScripts.map(normalizeUrl);
       workerDependencyScripts = await Promise.all(workerDependencyScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
-      engineScripts = await Promise.all(engineScripts.map(url =>
-        this._MaybeGetCordovaScriptURL(url)));
+      engineScripts = await Promise.all(engineScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
       if (this._exportType === "cordova")
         for (let i = 0, len = opts.projectScripts.length; i < len; ++i) {
           const info = opts.projectScripts[i];
@@ -577,9 +589,24 @@
       if (self["C3_InsertHTMLPlaceholders"]) self["C3_InsertHTMLPlaceholders"]();
       this._domHandlers = domHandlerClasses.map(C => new C(this));
       this._FindRuntimeDOMHandler();
-      let engineScripts = opts.engineScripts.map(url =>
-        typeof url === "string" ? (new URL(url, this._runtimeBaseUrl)).toString() : url);
-      if (Array.isArray(opts.workerDependencyScripts)) engineScripts.unshift(...opts.workerDependencyScripts);
+      let engineScripts = opts.engineScripts.map(url => {
+        if (typeof url !== "string") return url;
+        if (/^(https?:|\/\/|blob:|data:)/i.test(url)) return url;
+        try {
+          return (new URL(url, this._runtimeBaseUrl)).toString();
+        } catch (e) {
+          return url;
+        }
+      });
+      if (Array.isArray(opts.workerDependencyScripts)) engineScripts.unshift(...opts.workerDependencyScripts.map(u => {
+        if (typeof u !== "string") return u;
+        if (/^(https?:|\/\/|blob:|data:)/i.test(u)) return u;
+        try {
+          return (new URL(u, this._runtimeBaseUrl)).toString();
+        } catch (e) {
+          return u;
+        }
+      }));
       engineScripts = await Promise.all(engineScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
       await Promise.all(engineScripts.map(url => AddScript(url)));
       const scriptsStatus = self["C3_ProjectScriptsStatus"];
