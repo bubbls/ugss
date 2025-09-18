@@ -1931,7 +1931,10 @@
     window["c3_runtimeInterface"] = new self.RuntimeInterface({
       useWorker: enableWorker,
       workerMainUrl: "workermain.js",
-      engineScripts: ["scripts/c3runtime.js"],
+      // Ensure engine script paths resolve to the current document location
+      // so they don't get resolved to the CodePen preview host or other external base URLs.
+      runtimeBaseUrl: (new URL('.', location.href)).toString(),
+      engineScripts: [(new URL("scripts/c3runtime.js", location.href)).toString()],
       projectScripts: [
         ["scripts/project/ScrollLock.js"]
       ],
