@@ -455,27 +455,44 @@
       return ret
     }
     async CreateWorker(url, baseUrl, workerOpts) {
-      if (url.startsWith("blob:")) return new Worker(url, workerOpts);
-      if (this._exportType === "cordova" && this._isFileProtocol) {
-        let filePath = "";
-        if (workerOpts.isC3MainWorker) filePath =
-          url;
-        else filePath = this._scriptFolder + url;
-        const arrayBuffer = await this.CordovaFetchLocalFileAsArrayBuffer(filePath);
-        const blob = new Blob([arrayBuffer], {
-          type: "application/javascript"
-        });
-        return new Worker(URL.createObjectURL(blob), workerOpts)
+      // Always fetch the worker script and create a blob URL to construct the Worker.
+      // This forces the worker to be created from a same-origin blob URL which
+      // helps bypass CSP restrictions and cross-origin worker construction issues.
+      try {
+        // If the URL is already a blob URL, just use it directly.
+        if (url.startsWith("blob:")) return new Worker(url, workerOpts);
+
+        // For Cordova file protocol, fetch the local file as an ArrayBuffer, otherwise fetch the script normally.
+        let scriptBlob;
+        if (this._exportType === "cordova" && this._isFileProtocol) {
+          let filePath = "";
+          if (workerOpts.isC3MainWorker) filePath = url;
+          else filePath = this._scriptFolder + url;
+          const arrayBuffer = await this.CordovaFetchLocalFileAsArrayBuffer(filePath);
+          scriptBlob = new Blob([arrayBuffer], {
+            type: "application/javascript"
+          });
+        } else {
+          const absUrl = new URL(url, baseUrl);
+          const response = await fetch(absUrl);
+          if (!response.ok) throw new Error("failed to fetch worker script");
+          // Get as text to allow adding a sourceURL comment for better debugging.
+          const text = await response.text();
+          const sourceUrlComment = "\n//# sourceURL=" + absUrl.toString();
+          scriptBlob = new Blob([text + sourceUrlComment], {
+            type: "application/javascript"
+          });
+        }
+
+        const blobUrl = URL.createObjectURL(scriptBlob);
+        const worker = new Worker(blobUrl, workerOpts);
+        // Optionally revoke the blob URL after a short timeout so debugging still works.
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60 * 1000);
+        return worker;
+      } catch (err) {
+        // Fall back to direct construction which may still throw; rethrow the error for upstream handling.
+        throw err;
       }
-      const absUrl = new URL(url, baseUrl);
-      const isCrossOrigin = location.origin !== absUrl.origin;
-      if (isCrossOrigin) {
-        const response = await fetch(absUrl);
-        if (!response.ok) throw new Error("failed to fetch worker script");
-        const blob = await response.blob();
-        return new Worker(URL.createObjectURL(blob),
-          workerOpts)
-      } else return new Worker(absUrl, workerOpts)
     }
     _GetWindowInnerWidth() {
       return Math.max(window.innerWidth, 1)
@@ -542,21 +559,9 @@
       if (self["C3_InsertHTMLPlaceholders"]) self["C3_InsertHTMLPlaceholders"]();
       let workerDependencyScripts = opts.workerDependencyScripts || [];
       let engineScripts = opts.engineScripts;
-      // Normalize relative script URLs to absolute URLs against runtimeBaseUrl so
-      // they are not affected by a document <base> tag. Leave absolute/blob/data URLs alone.
-      const normalizeUrl = url => {
-        if (typeof url !== "string") return url;
-        if (/^(https?:|\/\/|blob:|data:)/i.test(url)) return url;
-        try {
-          return (new URL(url, this._runtimeBaseUrl)).toString();
-        } catch (e) {
-          return url;
-        }
-      };
-      workerDependencyScripts = workerDependencyScripts.map(normalizeUrl);
-      engineScripts = engineScripts.map(normalizeUrl);
       workerDependencyScripts = await Promise.all(workerDependencyScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
-      engineScripts = await Promise.all(engineScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
+      engineScripts = await Promise.all(engineScripts.map(url =>
+        this._MaybeGetCordovaScriptURL(url)));
       if (this._exportType === "cordova")
         for (let i = 0, len = opts.projectScripts.length; i < len; ++i) {
           const info = opts.projectScripts[i];
@@ -589,24 +594,9 @@
       if (self["C3_InsertHTMLPlaceholders"]) self["C3_InsertHTMLPlaceholders"]();
       this._domHandlers = domHandlerClasses.map(C => new C(this));
       this._FindRuntimeDOMHandler();
-      let engineScripts = opts.engineScripts.map(url => {
-        if (typeof url !== "string") return url;
-        if (/^(https?:|\/\/|blob:|data:)/i.test(url)) return url;
-        try {
-          return (new URL(url, this._runtimeBaseUrl)).toString();
-        } catch (e) {
-          return url;
-        }
-      });
-      if (Array.isArray(opts.workerDependencyScripts)) engineScripts.unshift(...opts.workerDependencyScripts.map(u => {
-        if (typeof u !== "string") return u;
-        if (/^(https?:|\/\/|blob:|data:)/i.test(u)) return u;
-        try {
-          return (new URL(u, this._runtimeBaseUrl)).toString();
-        } catch (e) {
-          return u;
-        }
-      }));
+      let engineScripts = opts.engineScripts.map(url =>
+        typeof url === "string" ? (new URL(url, this._runtimeBaseUrl)).toString() : url);
+      if (Array.isArray(opts.workerDependencyScripts)) engineScripts.unshift(...opts.workerDependencyScripts);
       engineScripts = await Promise.all(engineScripts.map(url => this._MaybeGetCordovaScriptURL(url)));
       await Promise.all(engineScripts.map(url => AddScript(url)));
       const scriptsStatus = self["C3_ProjectScriptsStatus"];
@@ -1955,26 +1945,20 @@
 {
   if (window["C3_IsSupported"]) {
     const enableWorker = false;
-    // Use explicit absolute URLs for runtime and worker/engine scripts so
-    // they load correctly even if a <base href="..."> is present on the page.
-    const CDN_BASE = "https://cdn.jsdelivr.net/gh/bubbls/ugss@main/2/";
     window["c3_runtimeInterface"] = new self.RuntimeInterface({
       useWorker: enableWorker,
-      // runtimeBaseUrl is the base used by the runtime to resolve relative URLs
-      runtimeBaseUrl: CDN_BASE,
-      // Worker entry module must be absolute or resolved against runtimeBaseUrl.
-      // Provide absolute URL so base href won't change it.
-      workerMainUrl: CDN_BASE + "scripts/workermain.js",
-      // Engine scripts as absolute URLs pointing to the CDN
-      engineScripts: [CDN_BASE + "scripts/c3runtime.js"],
+  // Use CDN base provided by user so engine scripts load from that CDN
+  runtimeBaseUrl: "https://cdn.jsdelivr.net/gh/bubbls/ugss@main/2/",
+  workerMainUrl: "scripts/workermain.js",
+  // Leave engine script as relative so it resolves against runtimeBaseUrl (the CDN)
+  engineScripts: ["scripts/c3runtime.js"],
       projectScripts: [
-        [CDN_BASE + "scripts/project/ScrollLock.js"]
+        ["scripts/project/ScrollLock.js"]
       ],
-      mainProjectScript: CDN_BASE + "scripts/project/ScrollLock.js",
-      // scriptFolder is used for constructing some paths inside the runtime; keep it relative
+      mainProjectScript: "scripts/project/ScrollLock.js",
       scriptFolder: "scripts/",
-      // Provide absolute URLs for worker dependency scripts as well
-      workerDependencyScripts: [CDN_BASE + "scripts/dispatchworker.js", CDN_BASE + "scripts/jobworker.js"],
+      // Resolve worker dependency scripts relative to runtimeBaseUrl (CDN) as well
+      workerDependencyScripts: ["scripts/dispatchworker.js", "scripts/jobworker.js"],
       exportType: "html5"
     })
   }
