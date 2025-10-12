@@ -59,6 +59,9 @@ var YaGames;
                     XT: () => oe,
                     eU: () => ie
                 });
+window.YandexGamesSDKEnvironment = window.YandexGamesSDKEnvironment || {};
+window.YandexGamesSDKEnvironment.i18n = { lang: 'en', tld: 'com' };
+window.YandexGamesSDKEnvironment.browser = { lang: 'en' };
                 var r = n(719);
                 const a = {
                         GetList: e => ({
@@ -654,11 +657,22 @@ var YaGames;
 
                 function a() {
                     var e, t;
-                    if ("undefined" == typeof window) return "";
-                    const n = (null == (t = null == (e = window.YandexGamesSDKEnvironment) ? void 0 : e.app) ? void 0 : t.id) || "";
-                    return n || (0, r.f)(new Error("Can not get appId from environment")), n
+                    // Override environment before SDK initialization
+if (typeof window.YandexGamesSDKEnvironment !== 'undefined') {
+  window.YandexGamesSDKEnvironment.i18n = {
+    lang: 'en',
+    tld: 'com'
+  };
+  window.YandexGamesSDKEnvironment.browser = {
+    lang: 'en'
+  };
+}
+
+document.body.appendChild(script);
+InitYSDK(); n
                 }
             },
+            
             280: (e, t, n) => {
                 n.d(t, {
                     Z: () => c
